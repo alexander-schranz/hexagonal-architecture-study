@@ -1,0 +1,42 @@
+{
+    "name": "framework-compatibility-project/event",
+    "description": "Add event library which integrate itself into other frameworks.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexander Schranz",
+            "email": "alexander@sulu.io"
+        }
+    ],
+    "require": {
+        "php": "^8.0",
+        "webmozart/assert": "^1.10"
+    },
+    "require-dev": {
+        "symfony/phpunit-bridge": "^5.3",
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "qossmic/deptrac-shim": "^0.14.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "FrameworkCompatibilityProject\\Event\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FrameworkCompatibilityProject\\Event\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "lint": [
+            "@php-cs",
+            "@lint-deptrac"
+        ],
+        "php-cs": "@php vendor/bin/php-cs-fixer fix --verbose --diff --dry-run",
+        "php-cs-fix": "@php vendor/bin/php-cs-fixer fix",
+        "lint-deptrac": "@php vendor/bin/deptrac",
+        "test": "@php vendor/bin/simple-phpunit",
+        "test-with-coverage": "@test --coverage-php tests/reports/coverage.php --coverage-html tests/reports/html --log-junit tests/reports/junit.xml"
+    }
+}
