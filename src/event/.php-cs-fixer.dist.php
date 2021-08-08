@@ -2,7 +2,7 @@
 
 $finder = (new PhpCsFixer\Finder())
     ->in(__DIR__)
-    ->exclude(['var', 'node_modules'])
+    ->exclude(['var', 'node_modules', 'tests/var', 'tests/reports/coverage.php'])
 ;
 
 return (new PhpCsFixer\Config())
