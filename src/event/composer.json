@@ -17,7 +17,10 @@
     "require-dev": {
         "symfony/phpunit-bridge": "^5.3",
         "friendsofphp/php-cs-fixer": "^3.0",
-        "qossmic/deptrac-shim": "^0.14.1"
+        "qossmic/deptrac-shim": "^0.14.1",
+        "doctrine/orm": "^2.9",
+        "doctrine/collections": "^1.6",
+        "symfony/cache": "^5.3"
     },
     "autoload": {
         "psr-4": {
@@ -38,6 +41,6 @@
         "php-cs-fix": "@php vendor/bin/php-cs-fixer fix",
         "lint-deptrac": "@php vendor/bin/deptrac",
         "test": "@php vendor/bin/simple-phpunit",
-        "test-with-coverage": "@test --coverage-php tests/reports/coverage.php --coverage-html tests/reports/html --log-junit tests/reports/junit.xml"
+        "test-with-coverage": "@test --coverage-php tests/var/reports/coverage.php --coverage-html tests/var/reports/html --log-junit tests/var/reports/junit.xml"
     }
 }
