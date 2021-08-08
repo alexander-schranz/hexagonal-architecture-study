@@ -11,7 +11,8 @@
     ],
     "require": {
         "php": "^8.0",
-        "webmozart/assert": "^1.10"
+        "webmozart/assert": "^1.10",
+        "psr/event-dispatcher": "^1.0"
     },
     "require-dev": {
         "symfony/phpunit-bridge": "^5.3",
