@@ -50,8 +50,6 @@ trait EventRepositoryTestTrait
 
     public function testRemove(): void
     {
-        $this->purge();
-
         $eventRepository = $this->createEventRepository();
 
         $eventA = $eventRepository->create('en');
@@ -200,8 +198,10 @@ trait EventRepositoryTestTrait
 
         $eventA = $eventRepository->create('en');
         $eventRepository->createTranslation($eventA, 'en');
+        $eventRepository->createTranslation($eventA, 'it');
         $eventB = $eventRepository->create('en');
         $eventRepository->createTranslation($eventB, 'en');
+        $eventRepository->createTranslation($eventB, 'sv');
         $eventC = $eventRepository->create('de');
         $eventRepository->createTranslation($eventC, 'de');
 

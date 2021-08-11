@@ -20,7 +20,9 @@
         "qossmic/deptrac-shim": "^0.14.1",
         "doctrine/orm": "^2.9",
         "doctrine/collections": "^1.6",
-        "symfony/cache": "^5.3"
+        "symfony/cache": "^5.3",
+        "cycle/orm": "^1.5",
+        "cycle/schema-builder": "^1.2"
     },
     "autoload": {
         "psr-4": {

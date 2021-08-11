@@ -8,7 +8,10 @@ use FrameworkCompatibilityProject\Event\Domain\Exception\EventTranslationNotFoun
 
 class Event implements EventInterface
 {
-    protected int $id;
+    /**
+     * @var int
+     */
+    protected ?int $id = null;
 
     /**
      * @param iterable<EventTranslationInterface>
