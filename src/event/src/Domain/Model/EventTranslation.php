@@ -6,7 +6,10 @@ namespace FrameworkCompatibilityProject\Event\Domain\Model;
 
 class EventTranslation implements EventTranslationInterface
 {
-    private int $id;
+    /**
+     * @var int
+     */
+    protected ?int $id = null;
 
     protected string $title = '';
 
