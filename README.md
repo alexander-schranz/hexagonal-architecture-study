@@ -158,12 +158,13 @@ The architecture is mostly shown the following way:
 Here we already see why it is called "Ports & Adapters" the Application core 
 communicates over ports with its adapters.
 
-The main business logic should in this architecture exist in the 
-`Application Core`, which we will split into the `Domain` and the 
-`Application` namespace.
-
-The rest, the adapters split into `UserInterface` and `Infrastructure` should 
-be kept that it is easily replace them or add new ones:
+We will use a common Layered Hexagonal Architecture in our code. The main 
+business logic should in this architecture exist in the `Application Core`,
+which we will split into the `Domain` and the `Application` namespace. The 
+adapters we will split into `UserInterface` and `Infrastructure`. This layers 
+are also common without the UserInterface so the UserInterface adapters there 
+live in the Infrastructure layer. The ports to the adapters should be kept that
+the adapters are easily replaceable or new adapters can be added:
 
 ```
 |       Adapters       | Port |                  Application Core               | Port |           Adapters           |
@@ -207,7 +208,7 @@ referenced in the Application Core just by a RepositoryInterface and by the
 `Infrastructure` Code for Symfony Framework correctly injected over 
 Dependency Injection.
 
-So now we already did talk about the 4 Layers of the Hexagonal Architecture 
+So now we already did talk about the 4 Layers of our Hexagonal Architecture 
 which are:
 
  - Application
@@ -217,7 +218,7 @@ which are:
 
 The Hexagonal Architecture defines a specific way which layers are allowed 
 to access the models and services of other layers. This is shown in the 
-previous shown graphic with the arrows.
+previous graphic with the arrows.
 
 ### 3.1. Domain Layer
 
@@ -236,7 +237,8 @@ for your domains, thrown expected exception for the Application or
 UserInterface. As Port to other Layers the Domain layer should provide for 
 example an Interface for the Persistence Layer over a 
 RepositoryInterface. The Interface can be used then by an Infrastructure 
-Implementation.
+Implementation. This type of pattern is well known as the "Dependency 
+Inversion Principle" (DIP).
 
 ### 3.2. Application Layer
 
@@ -339,23 +341,190 @@ practical part.
 
 ## 5. Creating Domain Layer
 
-Coming soon...
+The domain namespace is responsible for the domain models and services. 
+Common things inside it are Models, Exceptions, Events, Repository (Port), 
+Factories.
 
 ### 5.1. Modeling Domain Models
 
-Coming soon...
+The best way of defining the Domain Models is to begin with some kind of class 
+diagram. This allows you to discuss relations between your models without 
+the need of actually implementing them. In our example we have a very basic 
+models with an `Event` and an `EventTranslation`. Modeling the Domain classes 
+should help you also define the Bounded Contexts which from
+[Chapter 2 - Bounding Context](#2-bounding-context).
+
+```
++-----------------------------------[ Event Context ]---------------------------------+
+|                                                                                     |
+|     +---------------------------------+               +-----------------------+     |
+|     |           Event                 |               |  EventTranslation     |     |
+|     +---------------------------------+               +-----------------------+     |
+|     | -id: int                        | 1           n | -id: int              |     | 
+|     | -defaultLocale: string          |<------------->| -locale: string       |     |
+|     +---------------------------------+               | -title: string        |     |
+|     | + getDefaultLocale(): string    |               +-----------------------+     |
+|     | + getTranslations(): i<ET>      |               | + getTitle(): string  |     |
+|     | ...                             |               | ...                   |     |
+|     +---------------------------------+               +-----------------------+     |
+|                                                                                     |
++-------------------------------------------------------------------------------------+
+```
+
+In which detail you creating this diagrams is always up to you. Now as we 
+have defined our Models we can begin to implement them.
+
+ - [Event.php](./src/event/src/Domain/Model/Event.php)
+ - [EventTranslation.php](./src/event/src/Domain/Model/EventTranslation.php)
+
+After this we extract the Model public methods into an Interface mostly IDEs 
+are helping here like Intellij/PHPStorm from Jetbrains. After that we should 
+use everywhere where we are expecting a specific Model using the Interface 
+instead of the Model class.
+
+ - [EventInterface.php](./src/event/src/Domain/Model/EventInterface.php)
+ - [EventTranslationInterface.php](./src/event/src/Domain/Model/EventTranslationInterface.php)
+
+In the next step we should also define in our Domain which Exception could 
+happen. At the begin of a project there will be not much Exception so we 
+have here 2 expected Exceptions:
+
+- [EventNotFoundException.php](./src/event/src/Domain/Exception/EventNotFoundException.php)
+- [EventTranslationNotFoundException.php](./src/event/src/Domain/Model/EventTranslationNotFoundException.php)
+
+The Domain Models should not be just some Entities with getter and setter 
+they should implement also some kind of business logic. Mostly here is 
+spoken about Rich Models, which can have complex logic in itself and also throw
+exceptions when something unexpected happens.
+
+Here a more complex example on a User Model:
+
+```php
+class User {
+    private string $username;
+    private string $email;
+    private string $passwordHash;
+
+    public function __construct(
+        string $username,
+        string $email,
+        string $rawPassword,
+        callable $passwordHasher
+    ) {
+        $this->changeUsernameAndEmail($username, $email);
+        $this->changePassword($rawPassword, $passwordHasher);
+    }
+
+    public function changeUsernameAndEmail(string $username, string $email): void
+    {
+        if (str_contains($username, '@') && $username !== $email) {
+            throw new \InvalidArgumentException('A username containing the @ symbol must much the given email address.');
+        }
+
+        $this->username = $username;
+        $this->email = $email;
+    }
+
+    public function changePassword($rawPassword, callable $passwordHasher): void
+    {
+        $this->passwordHash = $passwordHasher($rawPassword);
+    }
+}
+```
+
+The advantage of rich models are also that they are valid objects after they 
+are constructed. So the constructor of your model already defines all required 
+attributes which the Model needs to be persisted and setters are only used 
+for optional fields. Also it is common that not every field has a setter and 
+some can so only be set at the beginning of creating the model, when example 
+a field is not changeable like our `EventTranslation::locale`.
 
 ### 5.2. Defining Domain Services
 
-Coming soon...
+The most common service which exist in the Domain is the ModelRepository. As 
+the Repository should allow to save our Models in a persistence storage we 
+need to create a Port for it. This Port is the RepositoryInterface which 
+uses Dependency Inversion Principle so there is no direct relation to the 
+persistence storage.
+
+Another common service is the Domain is the ModelFactory to create an 
+instance of your model. In our case there exist no ModelFactory as we did 
+directly add a create and createTranslation method to our Repository. This is 
+because of experience that how a model need to be constructed can depend on the
+used persistence layer.
+
+ - [EventRepositoryInterface.php](./src/event/src/Domain/Repository/EventRepositoryInterface.php)
+
+The Interface will make use of our before defined EventNotFoundException in 
+case of the `getOneBy` is called with none exist filter parameters. If 
+carefully look at the defined RepositoryInterface you will see that there 
+are 2 methods which look equal the `getOneBy` and `findOneBy`. Where in most 
+cases the `getOneBy` where the Model is returned or a EventNotFoundException 
+is thrown is the best. There are usecases where the `findOneBy` make more 
+sense to make readable code. As an example: 
+
+```php
+// bad example for using getOneBy
+try {
+   $existUser = $this->userRepository->getOneBy(['username' => $username]);
+   
+   throw new UsernameAlreadyTakenException($username);
+} catch (UserNotFoundException $e) {
+   // expected program flow
+}
+
+$user = new User($username);
+
+// ..
+```
+
+In this case the `findOneBy` is a better used the expected program flow is 
+not going through an exception:
+
+```php
+// good example replacing getOneBy with findOneBy
+$existUser = $this->userRepository->findOneBy(['username' => $username]);
+
+if ($existUser) {
+    throw new UsernameAlreadyTakenException($username);
+}
+
+$user = new User($username);
+
+// ..
+```
+
+How a RepositoryInterface can be defined is an
+[own topic](https://github.com/sulu/sulu/issues/5931). I personally 
+prefer that the Interfaces look similar to each other instead of defining too 
+specific methods. Still I would not create a common interface as it should 
+just define the method you really require and inheritance always adds 
+complexity.
+
+With the created RepositoryInterface we did define our minimal domain setup.
 
 ## 6. Creating Application Layer
 
-Coming soon...
+The minimal domain setup in the chapter before allows us now to create our 
+application logic. The application layer provides the services for the 
+outside which can be used. In our case we have decided that we want to use a 
+command bus to communicate with our application. Because of conflicts of the 
+name command with CLI command/scripts in widely used frameworks we have 
+decided to go here instead with Command and CommandHandler with Message and 
+MessageHandler.
 
 ### 6.1. Creating Messages
 
-Coming soon...
+The messages or commands are at the end Data transfer objects (DTOs), which 
+converts the given data into an accessible format for the handlers:
+
+ - [CreateEventMessage.php](./src/event/src/Application/Message/CreateEventMessage.php)
+ - [ModifyEventMessage.php](./src/event/src/Application/Message/ModifyEventMessage.php)
+ - [RemoveEventMessage.php](./src/event/src/Application/Message/RemoveEventMessage.php)
+
+All data should be injected into the message over the constructor and so the 
+message should be immutable by design. It should only define getter methods to 
+make data easier to access.
 
 ### 6.2. Validating Messages
 
@@ -435,7 +604,13 @@ Coming soon...
 
 ## 00. Summary
 
-Coming soon...
+Coming soon ...
+
+ - Hexagonal Architecture
+   - Layers
+   - Dependency Inversion Principle
+
+ ...
 
 ## 00.1 Thank you
 
