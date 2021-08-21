@@ -20,6 +20,7 @@
    - [6.2 Validating Messages](#62-validating-messages)
    - [6.3 Creating Message Handlers](#63-creating-message-handlers)
    - [6.4 Make Handlers extendable](#64-make-handlers-extendable)
+   - [6.5 Third party code inside application](#65-third-party-code-inside-applicatin)
  - [7 Testing Application Core](#7-testing-application-core)
    - [7.1 Mocks vs no Mocks](#71-mocks-vs-no-mocks)
    - [7.2 AAA Pattern](#72-aaa-pattern)
@@ -34,9 +35,12 @@
    - [9.2 Create reusable test traits](#92-create-reusable-test-traits)
  - [10. Creating UserInterface Layer](#10-creating-userinterface-layer)
    - [10.1 Create PSR 7 Controller](#101-create-psr-7-controller)
- - [11. Porting Application Core into another language](#11-porting-application-core-into-another-language)
+ - [11. Communicate between Bounded Contexts](#11-communicate-between-bounded-contexts)
+   - [11.1 Process Manager](#111-process-manager)
+ - [12. Porting Application Core into another language](#12-porting-application-core-into-another-language)
  - [00. Summary](#00-summary)
  - [00.1 Thank you](#001-thank-you)
+ - [00.2 Links](#002-links)
 
 ## 1. Introducing
 
@@ -122,12 +126,11 @@ context/library into a maintainable and reusable way.
 If you are interested in the origin of the hexagonal architecture you should
 definitely have a look at the Alistair Cockburn first published article
 about it on his website. Sadly currently only available in the webarchive
-https://web.archive.org/web/20170730135337/http://alistair.cockburn.
-us/Hexagonal+architecture.
+[https://web.archive.org/web/20170730135337/http://alistair.cockburn.us/Hexagonal+architecture](https://web.archive.org/web/20170730135337/http://alistair.cockburn.us/Hexagonal+architecture).
 
 Most which I'm familiar with is coming from the great Matthias Noback which
 did write several articles about this topic which can be found on his website
-https://matthiasnoback.nl/tags/hexagonal%20architecture/.
+[https://matthiasnoback.nl/tags/hexagonal%20architecture/](https://matthiasnoback.nl/tags/hexagonal%20architecture/).
 
 The architecture is mostly shown the following way:
 
@@ -524,41 +527,330 @@ converts the given data into an accessible format for the handlers:
 
 All data should be injected into the message over the constructor and so the 
 message should be immutable by design. It should only define getter methods to 
-make data easier to access.
+make data easier to access. The data given to the message should just use 
+primitives types, this allows to create it from different contexts
+(cli/http/...). Also no data should be needed to be parsed out like in 
+arguments of a cli command. This type of things should happen in the 
+UserInterface layer.
+
+The primitives types not only allows to create the message at any case but 
+also make it easier when using like in our case a $data array directly 
+forwarding in example our $_POST data or in whatevery case your framework 
+does provide this kind of data. Example in symfony with the http foundation 
+request data:
+
+```php
+$message = new CreateEventMessage($request->request->all());
+```
+
+Where we did in our case created typical create, modify and remove messages. 
+It is common that there exist more specific message which represent your 
+domain. Example here could be a `ChangePasswordMessage` or a 
+`PublishEventMessage`.
 
 ### 6.2. Validating Messages
 
-Coming soon...
+The messages can be validated in different ways. It's possible to validate it 
+directly in the constructor. If an unexpected data is given you can throw a 
+InvalidArgumentException e.g.:
+
+```php
+Assert::string($data['title'] ?? null, 'Expected a valid title to be given.');
+```
+
+This is one of the simplest and easiest way for validation. Another way of 
+validating the inputted data is adding a validating method to it. e.g.:
+
+```php
+public function validate(): void
+{
+    $errors = [];
+    
+    if (empty($this->data['title']) || !is_string($this->data['title'])) {
+        $errors[] = [
+            'field' => 'title',
+            'message' => 'Expected a valid title to be given.',
+        ];
+    }
+    
+    if (empty($this->data['locale'])
+        || !is_string($this->data['locale']) ||
+        !in_array($this->data['locale'], ['en', 'de'])
+     ) {
+        $errors[] = [
+            'field' => 'locale',
+            'message' => 'Expected locale "en" or "de" given.',
+        ];
+    }
+    
+    throw new ValidationException($errors);
+}
+```
+
+The advantage of this method is that you validate multiple inputted data and 
+not just one by one. Instead of an exception you can also go with a boolean 
+return:
+
+```php
+private ?bool $valid = null;
+private array $errors = [];
+
+public function valid(): bool
+{
+    // if the message is already validated we don't need to validate it again
+    if ($this->valid !== null) {
+        return $this->valid;
+    }
+
+    if (empty($this->data['title']) || !is_string($this->data['title'])) {
+        $this->errors[] = [
+            'field' => 'title',
+            'message' => 'Expected a valid title to be given.',
+        ];
+    }
+
+    if (empty($this->data['locale'])
+        || !is_string($this->data['locale']) ||
+        !in_array($this->data['locale'], ['en', 'de'])
+     ) {
+        $this->errors[] = [
+            'field' => 'locale',
+            'message' => 'Expected locale "en" or "de" given.',
+        ];
+    }
+ 
+    $this->valid = empty($this->errors);
+ 
+    return $this->valid;
+}
+
+public function getErrors(): array
+{
+    if (null === $this->valid) {
+        throw new \LogicException('Run "valid" before calling "getErrors"');
+    }
+
+    return $this->errors;
+}
+```
+
+All of the above methods I think are good ways for validations, another way 
+would be using an own service which is validating the message. This 
+specially make sense if the message can be extended with additional data 
+which need to be validated.
+
+```php
+$message = new CreateEventMessage($data);
+$validator->validate($message);
+```
+
+So there are different ways of validating of the message, you also always 
+need to ask how much you want to validate inside your application core. In most 
+cases I would go with the first solution by validating it directly in the 
+constructor. If your controller would need another type of validation to 
+show better error messages you could provide some json schema standard. 
+This type of standard allows you that you can not only validate it in a 
+controller but also the client could validate it before triggering your api. 
+
+Where I personally prefer the pattern with to give an whole array into the 
+message, it is very common that you design your message / command constructor 
+with the data which is required:
+
+```php
+$message = new CreateEventMessage($locale, $title);
+```
+
+Which advantage of disadvantage this have we will see in the
+[Make Handlers extendable](#64-make-handlers-extendable) chapter.
 
 ### 6.3. Creating Message Handlers
 
-Coming soon...
+The message handlers implements what will happen when the message is 
+dispatch. In our case they are responsible for creating, modifying and 
+removing an entity.
+
+As mention already in the [creating messages chapter](#61-creating-messages) 
+its common that there are also more specific messages like 
+`ChangePasswordMessage` or `PublishEventMessage`, which are modifying our 
+objects not in the typical crud way.
+
+For our typical handlers which we created the handler need the Repository. The 
+repository of our models is represented in our Handlers only be the
+RepositoryInterface, which make over the Dependency Inversion Principle
+possible that different implementation or changeable implementation could be
+behind it.
+
+With the message we did already keep our handlers clean from request objects, 
+sessions and other things which are only needed to receive or deliver 
+something.
+
+Also with the message object we already did make sure the data we are 
+receiving are already validated. So we can here in our create and modify 
+handler load the requested model and call the mappers to map directly the data 
+to the model.
+
+- [CreateEventMessageHandler.php](./src/event/src/Application/MessageHandler/CreateEventMessageHandler.php)
+- [ModifyEventMessageHandler.php](./src/event/src/Application/MessageHandler/ModifyEventMessageHandler.php)
+- [RemoveEventMessageHandler.php](./src/event/src/Application/MessageHandler/RemoveEventMessageHandler.php)
+
+In the case of the Modify and Remove handler the identifier is represented 
+by an array (Map). The decision here was to go instead of using `int $id` to 
+go with an `array $identifier` to make it possible to modify or remove our 
+model not only by its id but also by any other unique identifier a model 
+could have. For example an uuid or an unique key field.
+
+The handlers are in our case returning nothing or returning the object. They 
+are not responsible how the object will be represented, this should not be 
+part of them. The handlers can throw events which could trigger other 
+processes like sending an email. Also other bounded contexts could listening 
+to this events to update there data with the done changes.
 
 ### 6.4. Make Handlers extendable
 
-Coming soon...
+The datamapper which we added to the CreateEventMessageHandler and 
+ModifyEventMessageHandler make it possible that we don't need to duplicate 
+the code to map data to our Model which are the same between created and 
+modify.
+
+- [EventDataMapper.php](./src/event/src/Application/MessageHandler/CreateEventMessageHandler.php)
+
+But this is not the only advantage of it. If we are allowing multiple 
+mappers we can make our create and modify handlers extendable. By 
+introducing an interface for the mapping:
+
+- [DataMapperInterface.php](./src/event/src/Application/Datamapper/EventDataMapperInterface.php)
+
+Also have here a look at the so called [Visitor Pattern](https://en.wikipedia.org/wiki/Visitor_pattern)
+which make this type of things possible.
+
+The requirement for making it extendable was that our messages allows that 
+additional data can be provided to our handler. This is done over the 
+introduced getData method.
+
+### 6.5 Third party code inside application
+
+Where it is good to keep your application core small of dependency it doesn't 
+mean that all your vendor code is automatically infrastructure code.
+
+The connection to infrastructure code is mostly done over an Interface using 
+the Dependency Inversion Principle. PHP provides over
+[PSR](https://www.php-fig.org/psr/) many common interfaces where no own 
+interface need to be written.
+
+At the time I'm written this chapter Matthias Noback has released an article 
+about this topic which is worse to read:
+[https://matthiasnoback.nl/2021/08/on-using-psr-abstractions/](https://matthiasnoback.nl/2021/08/on-using-psr-abstractions/).
+
+There are other common libraries which are for example abstractions 
+like [Flysystem library](https://github.com/thephpleague/flysystem) for local
+and remote filesystems access by
+[Frank de Jonge](https://github.com/frankdejonge).
+This type of libraries already provides interfaces you can use, mostly this 
+interfaces are more bulletproof than if we would write our own. Also this 
+kind of libraries can be inspiring how you can use the 
+[Adapter pattern](https://flysystem.thephpleague.com/v2/docs/architecture/) to 
+connect to your infrastructure code.
+
+Also small libraries do not hurt to add to your application code, it should 
+not have the need to reinvent the wheel, common libraries are example the 
+[webmozart/assert](https://github.com/webmozarts/assert) which provides you 
+a good way to valid the data given to the message constructor. Or a small 
+library like the [ramsey/uuid](https://github.com/ramsey/uuid) to generate 
+uuid4 strings for your application.
+
+Things like how your code or library is integrated into a framework or how it 
+is communicating with the database, orm should still definitely live in the 
+infrastructure code.
 
 ## 7. Testing Application Core
 
+A clean architecture, following the concepts of
+[SOLID](https://en.wikipedia.org/wiki/SOLID) software engineering, specially 
+[single responsibility](https://en.wikipedia.org/wiki/Single-responsibility_principle)
+should make your code easier to test with the framework you want.
+
 ### 7.1. Mocks vs no Mocks
 
-TODO rewrite: 
+As there are Interfaces used to connect to your Infrastructure code, you 
+will naturally create mocks for them. Where in somecases easier, you need to
+know about the inner structure of the class / method you want to test. This is
+something you want to avoid. The inner part of a method should be changable and
+aslong as you don't change input or output of that method the tests should not 
+be needed to be changed.
 
-To make the Application Core functional testable without any
-Infrastructure specific code a InMemoryRepository can be provided. This make
-your Domain testable without any mocking library which make code also
-easier maintainable as if you are changing just internal functions you don't
-need to change your test as long as the input and output is the same.
+In case of the RepositoryInterface we created in the Domain the solution is 
+that we provide a InMemoryRepository. This InMemoryRepository can also be a 
+small reference how our repository methods should behave and return things 
+beside the interface definition.
 
-See also: https://blog.frankdejonge.nl/testing-without-mocking-frameworks/
+Things like PSR 3 for logs already provides functional working 
+implementation like the NullLogger which can also be used in the tests.
+
+If testing without mocks is used you maybe need inside your tests use an 
+instance of your infrastructure code. As an example using the symfony event 
+dispatcher as a psr 14 implementation. So there is no need to create here 
+your own implementation of an interface only for testing.
+
+I can recommend to give testing without mocks a try, atleast I would 
+avoid mocking things like models, message in your tests. Creating an 
+instance of them and using them directly does make your tests a lot more 
+maintainable and avoid that an inner refractoring of a service requires to 
+rewrite all your tests. More about this topic you can find on
+[Frank de Jonge](https://github.com/frankdejonge) blog in the
+[https://blog.frankdejonge.nl/testing-without-mocking-frameworks/](https://blog.frankdejonge.nl/testing-without-mocking-frameworks/).
+article.
 
 ### 7.2. AAA-pattern
 
-Coming soon...
+The [AAA pattern](https://medium.com/@pjbgf/title-testing-code-ocd-and-the-aaa-pattern-df453975ab80)
+is a way how to write tests, in most cases you are doing this kind of things 
+naturally. But knowing that there exist this pattern help you to avoid 
+violeting it.
+
+AAA stands for Arrange, Act, Assert. Which are the 3 steps you should write 
+your test.
+
+First you arrange all you need to test the method in our case for a test 
+with the handler, the handler itself with the required repository and the 
+message we want to test:
+
+```php
+// Arrange
+$repository = new InMemoryEventRepository();
+$handler = new CreateEventMessageHandler($repository);
+
+$message = new CreateEventMessage(['locale' => 'en', 'title' => 'Test']);
+```
+
+After you arranged all you need you actually call what you want to test in 
+the step of Act:
+
+```php
+// Act
+$event = $handler->__invoke($message);
+```
+
+After this we finish the test with asserting the expected result.
+
+```php
+// Assert
+$translation = $event->findTranslation('en');
+$this->assertNotNull($translation);
+$this->assertSame('en', $translation->getLocale());
+$this->assertSame('Test', $translation->getTitle());
+```
+
+If doing this only once per test, the tests are very readable.
+In combination with mock-free testing this makes the application testing code
+readable and maintainable.
 
 ## 8. Creating Infrastructure Layer
 
-Coming soon...
+The infrastructure provides implementation for different Interfaces which are 
+accessed in our application code. The interface should make the 
+Infrastructure replaceable and our application core should work without it. In 
+the following examples it is shown how to implement different ORMs and how to
+integrate our application code into different frameworks.
 
 ### 8.2. Creating Doctrine ORM Integration
 
@@ -600,16 +892,27 @@ Coming soon...
 
 Coming soon...
 
+## 11. Communicate between Bounded Contexts
+
+Coming soon...
+
+### 11.1 Process Manager
+
+Coming soon...
+   
 ## 11. Porting Application Core into another language
+
+Coming soon...
 
 ## 00. Summary
 
 Coming soon ...
 
  - Hexagonal Architecture
-   - Layers
-   - Dependency Inversion Principle
-
+   - Layers (clear structure)
+   - Dependency Inversion Principle (connection between layers)
+   - Adapter Pattern (connection to infrastructure)
+   - Visitor Pattern (extendability)
  ...
 
 ## 00.1 Thank you
@@ -620,8 +923,27 @@ Schedler which always pushing us to look "beyond the tellerand" ;). I also want
 to thank here the spiral community which did help me a lot to integrate the Cycle
 ORM integration as an alternative persistence layer. A lot of things which I
 learned about Hexagonal architecture is coming from Matthias Noback blogs about
-this topic so I also want to thank him here to share his knowledge with us, 
-that we can create sustainable software.
+this topic. So I also want to thank him here to share his knowledge with us, 
+that we can create sustainable software. Another man which was also an 
+inspiration for me is Frank do Jonge, creator of flysystem and enthusiast of 
+testing without mocking, which did show me a way of making tests more 
+maintainable.
 
 And at the end I want to thank you, the reader of this, thank you for taking
 this time I hope you did find something useful in my "Project Rabbit Hole".
+
+## 00.2 Links
+
+ - https://web.archive.org/web/20170730135337/http://alistair.cockburn.us/Hexagonal+architecture
+ - https://martinfowler.com/tags/domain%20driven%20design.html
+ - https://en.wikipedia.org/wiki/Hexagonal_architecture_(software)
+ - https://en.wikipedia.org/wiki/Visitor_pattern
+ - https://en.wikipedia.org/wiki/SOLID
+ - https://www.php-fig.org/psr/
+ - https://en.wikipedia.org/wiki/Single-responsibility_principle
+ - https://flysystem.thephpleague.com/v2/docs/architecture/
+ - https://blog.frankdejonge.nl/testing-without-mocking-frameworks/
+ - https://medium.com/@pjbgf/title-testing-code-ocd-and-the-aaa-pattern-df453975ab80
+ - https://matthiasnoback.nl/tags/hexagonal%20architecture/
+ - https://matthiasnoback.nl/2021/08/on-using-psr-abstractions/
+ - https://matthiasnoback.nl/2020/02/is-all-code-in-vendor-infrastructure-code/
